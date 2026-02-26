@@ -47,19 +47,19 @@ router.post('/scan', async (req, res) => {
         });
 
         // 2. Fetch all entries for this participant to show history
-        const allEntries = await Entry.find({ participantId }).sort({ createdAt: 1 }).lean();
-        const alreadyEntered = allEntries.length > 1;
-
-        // Map history (excluding the current scan which is the last one in the sorted list)
-        const history = allEntries.slice(0, -1).map(e => formatTime(e.createdAt));
+        const allEntries = await Entry.find({ participantId }).sort({ createdAt: -1 }).lean(); // newest first
+        const currentEntry = allEntries[0];
+        const prevEntries = allEntries.slice(1);
 
         return res.json({
             success: true,
             status: 'VERIFIED',
-            alreadyEntered: alreadyEntered,
+            alreadyEntered: prevEntries.length > 0,
             participantId,
-            entryTimes: history,
-            message: alreadyEntered
+            currentTime: formatTime(currentEntry.createdAt),
+            entryTimes: prevEntries.map(e => formatTime(e.createdAt)),
+            totalScans: allEntries.length,
+            message: prevEntries.length > 0
                 ? `Verified — seen ${allEntries.length} times total.`
                 : `${participantId} — entry confirmed`
         });
