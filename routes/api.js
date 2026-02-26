@@ -39,31 +39,29 @@ router.post('/scan', async (req, res) => {
         const { participantId, passSecret } = parsed;
         const { Entry } = getModels();
 
-        // Check all previous entries for this participant
-        const prevEntries = await Entry.find({ participantId }).sort({ createdAt: 1 }).lean();
+        // 1. Record the new entry immediately
+        await Entry.create({
+            participantId,
+            passSecret,
+            deviceId: deviceId || 'unknown'
+        });
 
-        if (prevEntries.length > 0) {
-            // Already entered — still show VERIFIED but include full entry history
-            return res.json({
-                success: true,
-                status: 'VERIFIED',
-                alreadyEntered: true,
-                participantId,
-                entryTimes: prevEntries.map(e => formatTime(e.createdAt)),
-                message: `Verified — checked in ${prevEntries.length} time(s) previously.`,
-            });
-        }
+        // 2. Fetch all entries for this participant to show history
+        const allEntries = await Entry.find({ participantId }).sort({ createdAt: 1 }).lean();
+        const alreadyEntered = allEntries.length > 1;
 
-        // First entry — save to DB
-        await Entry.create({ participantId, passSecret, deviceId: deviceId || 'unknown' });
+        // Map history (excluding the current scan which is the last one in the sorted list)
+        const history = allEntries.slice(0, -1).map(e => formatTime(e.createdAt));
 
         return res.json({
             success: true,
             status: 'VERIFIED',
-            alreadyEntered: false,
+            alreadyEntered: alreadyEntered,
             participantId,
-            entryTimes: [],
-            message: `${participantId} — entry confirmed`,
+            entryTimes: history,
+            message: alreadyEntered
+                ? `Verified — seen ${allEntries.length} times total.`
+                : `${participantId} — entry confirmed`
         });
 
     } catch (err) {
