@@ -23,15 +23,15 @@ function formatTime(date) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/scan  —  Parse QR, check duplicate, save to DB in one shot
+// POST /api/scan
+// Body: { qrCode, deviceId }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/scan', async (req, res) => {
     try {
-        const { qrCode } = req.body;
+        const { qrCode, deviceId } = req.body;
         if (!qrCode)
             return res.status(400).json({ success: false, message: 'QR code is empty.' });
 
-        // 1. Parse
         const parsed = parseQr(qrCode);
         if (!parsed.valid)
             return res.json({ success: false, status: 'INVALID_QR', message: parsed.error });
@@ -39,25 +39,31 @@ router.post('/scan', async (req, res) => {
         const { participantId, passSecret } = parsed;
         const { Entry } = getModels();
 
-        // 2. Duplicate check
-        const alreadyEntered = await Entry.findOne({ participantId }).lean();
-        if (alreadyEntered) {
+        // Check all previous entries for this participant
+        const prevEntries = await Entry.find({ participantId }).sort({ createdAt: 1 }).lean();
+
+        if (prevEntries.length > 0) {
+            // Already entered — still show VERIFIED but include full entry history
             return res.json({
-                success: false,
-                status: 'DUPLICATE',
-                message: `Already checked in at ${formatTime(alreadyEntered.createdAt)}.`,
+                success: true,
+                status: 'VERIFIED',
+                alreadyEntered: true,
                 participantId,
+                entryTimes: prevEntries.map(e => formatTime(e.createdAt)),
+                message: `Verified — checked in ${prevEntries.length} time(s) previously.`,
             });
         }
 
-        // 3. Save to DB
-        await Entry.create({ participantId, passSecret });
+        // First entry — save to DB
+        await Entry.create({ participantId, passSecret, deviceId: deviceId || 'unknown' });
 
         return res.json({
             success: true,
-            status: 'ENTERED',
+            status: 'VERIFIED',
+            alreadyEntered: false,
             participantId,
-            message: `${participantId} — entry confirmed ✅`,
+            entryTimes: [],
+            message: `${participantId} — entry confirmed`,
         });
 
     } catch (err) {
@@ -67,12 +73,16 @@ router.post('/scan', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/entries — Full entry log (newest first)
+// GET /api/entries?deviceId=xxx
+// Returns only entries scanned by this device
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/entries', async (req, res) => {
     try {
+        const { deviceId } = req.query;
         const { Entry } = getModels();
-        const entries = await Entry.find().sort({ createdAt: -1 }).lean();
+
+        const filter = deviceId ? { deviceId } : {};
+        const entries = await Entry.find(filter).sort({ createdAt: -1 }).lean();
         res.json({ success: true, count: entries.length, entries });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
