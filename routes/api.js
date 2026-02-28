@@ -16,12 +16,6 @@ function parseQr(raw) {
     return { valid: true, participantId, passSecret };
 }
 
-function formatTime(date) {
-    return new Date(date).toLocaleTimeString('en-IN', {
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-    });
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/scan
 // Body: { qrCode, deviceId }
@@ -56,8 +50,8 @@ router.post('/scan', async (req, res) => {
             status: 'VERIFIED',
             alreadyEntered: prevEntries.length > 0,
             participantId,
-            currentTime: formatTime(currentEntry.createdAt),
-            entryTimes: prevEntries.map(e => formatTime(e.createdAt)),
+            currentTime: currentEntry.createdAt, // Raw UTC
+            entryTimes: prevEntries.map(e => e.createdAt), // Raw UTCs
             totalScans: allEntries.length,
             message: prevEntries.length > 0
                 ? `Verified — seen ${allEntries.length} times total.`
